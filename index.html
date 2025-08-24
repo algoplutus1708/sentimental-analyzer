@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swastick's Sentimental Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .gemini-btn {
+            background: linear-gradient(45deg, #4f46e5, #818cf8);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center h-screen">
+    <div class="w-full max-w-md mx-auto bg-white rounded-2xl shadow-xl flex flex-col h-[90vh]">
+        <!-- Header -->
+        <div class="p-4 border-b border-gray-200 bg-blue-600 rounded-t-2xl">
+            <h1 class="text-xl font-bold text-white text-center">Swastick's Sentimental Analyzer</h1>
+            <p class="text-sm text-blue-100 text-center">Enter a message to see its sentiment</p>
+        </div>
+
+        <!-- Chat Area -->
+        <div id="chat-area" class="flex-1 p-6 overflow-y-auto">
+            <!-- Bot Welcome Message -->
+            <div class="flex items-start gap-3 mb-6">
+                <div class="bg-blue-500 text-white p-2 rounded-full text-lg">
+                    🤖
+                </div>
+                <div class="bg-gray-200 p-3 rounded-lg max-w-xs">
+                    <p class="text-sm text-gray-800">Hello! I can analyze the sentiment of your messages. Try sending something!</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loading-indicator" class="px-6 pb-2 hidden">
+             <div class="flex items-start gap-3">
+                <div class="bg-blue-500 text-white p-2 rounded-full text-lg">
+                    🤖
+                </div>
+                <div class="bg-gray-200 p-3 rounded-lg">
+                    <div class="flex items-center justify-center space-x-2">
+                        <div class="w-2 h-2 rounded-full bg-gray-500 animate-pulse" style="animation-delay: 0s;"></div>
+                        <div class="w-2 h-2 rounded-full bg-gray-500 animate-pulse" style="animation-delay: 0.2s;"></div>
+                        <div class="w-2 h-2 rounded-full bg-gray-500 animate-pulse" style="animation-delay: 0.4s;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gemini Features -->
+        <div id="gemini-features" class="p-2 pt-0 border-t border-gray-200 bg-white text-center hidden">
+             <div class="flex justify-center items-center flex-wrap gap-2">
+                <button id="suggest-reply-btn" class="gemini-btn text-xs text-white px-3 py-1.5 rounded-full hover:opacity-90 transition transform hover:scale-105">✨ Suggest Reply</button>
+                <button id="elaborate-btn" class="gemini-btn text-xs text-white px-3 py-1.5 rounded-full hover:opacity-90 transition transform hover:scale-105">✨ Elaborate</button>
+                <button id="rephrase-btn" class="gemini-btn text-xs text-white px-3 py-1.5 rounded-full hover:opacity-90 transition transform hover:scale-105">✨ Rephrase</button>
+                <button id="summarize-btn" class="gemini-btn text-xs text-white px-3 py-1.5 rounded-full hover:opacity-90 transition transform hover:scale-105 hidden">✨ Summarize Chat</button>
+            </div>
+        </div>
+        
+        <!-- Gemini Rephrase Options -->
+        <div id="gemini-rephrase-options" class="p-2 pt-0 border-t border-gray-200 bg-white text-center hidden">
+            <span class="text-xs text-gray-500 mr-2">Rephrase as:</span>
+            <div class="inline-flex justify-center items-center space-x-2">
+                <button data-tone="formal" class="rephrase-tone-btn bg-gray-200 text-xs text-gray-700 px-3 py-1.5 rounded-full hover:bg-gray-300 transition">Formal</button>
+                <button data-tone="casual" class="rephrase-tone-btn bg-gray-200 text-xs text-gray-700 px-3 py-1.5 rounded-full hover:bg-gray-300 transition">Casual</button>
+                <button data-tone="polite" class="rephrase-tone-btn bg-gray-200 text-xs text-gray-700 px-3 py-1.5 rounded-full hover:bg-gray-300 transition">Polite</button>
+                <button id="cancel-rephrase-btn" class="bg-gray-400 text-xs text-white px-2 rounded-full hover:bg-gray-500 transition">&times;</button>
+            </div>
+        </div>
+
+
+        <!-- Input Area -->
+        <div class="p-4 border-t border-gray-200 bg-white rounded-b-2xl">
+            <div class="flex items-center space-x-3">
+                <input type="text" id="user-input" placeholder="Type your message..." class="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 transition">
+                <button id="send-btn" class="bg-blue-600 text-white px-5 py-2 rounded-full hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-300 ease-in-out transform hover:scale-105">
+                    Send
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const chatArea = document.getElementById('chat-area');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const geminiFeatures = document.getElementById('gemini-features');
+        const suggestReplyBtn = document.getElementById('suggest-reply-btn');
+        const elaborateBtn = document.getElementById('elaborate-btn');
+        const rephraseBtn = document.getElementById('rephrase-btn');
+        const summarizeBtn = document.getElementById('summarize-btn');
+        const geminiRephraseOptions = document.getElementById('gemini-rephrase-options');
+        const cancelRephraseBtn = document.getElementById('cancel-rephrase-btn');
+
+        let lastUserMessage = '';
+        let conversationHistory = [];
+
+        // --- Event Listeners ---
+        sendBtn.addEventListener('click', handleSendMessage);
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleSendMessage();
+        });
+        userInput.addEventListener('input', hideGeminiFeatures);
+        suggestReplyBtn.addEventListener('click', handleSuggestReply);
+        elaborateBtn.addEventListener('click', handleElaborate);
+        rephraseBtn.addEventListener('click', showRephraseOptions);
+        summarizeBtn.addEventListener('click', handleSummarizeChat);
+        cancelRephraseBtn.addEventListener('click', hideRephraseOptions);
+        document.querySelectorAll('.rephrase-tone-btn').forEach(button => {
+            button.addEventListener('click', handleRephrase);
+        });
+
+
+        // --- UI State Management ---
+        function hideGeminiFeatures() {
+            geminiFeatures.classList.add('hidden');
+            geminiRephraseOptions.classList.add('hidden');
+        }
+
+        function showRephraseOptions() {
+            geminiFeatures.classList.add('hidden');
+            geminiRephraseOptions.classList.remove('hidden');
+        }
+        
+        function hideRephraseOptions() {
+            geminiRephraseOptions.classList.add('hidden');
+            if (lastUserMessage) {
+                 geminiFeatures.classList.remove('hidden');
+            }
+        }
+
+        // --- Message Handling ---
+        async function handleSendMessage() {
+            const message = userInput.value.trim();
+            if (!message) return;
+            
+            lastUserMessage = message;
+            hideGeminiFeatures();
+            appendMessage('user', message);
+            userInput.value = '';
+            showLoading(true);
+
+            try {
+                const sentiment = await getSentiment(message);
+                const botResponse = handleBotResponse(sentiment);
+                appendMessage('bot', botResponse);
+                geminiFeatures.classList.remove('hidden'); 
+                
+                // Show summarize button after 2 user messages
+                const userMessages = conversationHistory.filter(m => m.sender === 'user').length;
+                if (userMessages >= 2) {
+                    summarizeBtn.classList.remove('hidden');
+                }
+
+            } catch (error) {
+                console.error("Error getting sentiment:", error);
+                appendMessage('bot', "Sorry, I couldn't analyze the sentiment. Please try again.");
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function handleBotResponse(sentiment) {
+            let emoji = '😐';
+            let responseText = "I'd say the sentiment is neutral.";
+
+            switch (sentiment.toLowerCase()) {
+                case 'positive': emoji = '😊'; responseText = "That sounds positive!"; break;
+                case 'negative': emoji = '😠'; responseText = "That seems negative."; break;
+                case 'neutral': emoji = '😐'; responseText = "This seems to be neutral."; break;
+                case 'mixed': emoji = '🤔'; responseText = "This has mixed sentiments."; break;
+            }
+            return `${emoji} ${responseText}`;
+        }
+
+        // --- Gemini Features ---
+        async function handleSuggestReply() {
+            if (!lastUserMessage) return;
+            hideGeminiFeatures();
+            showLoading(true);
+            try {
+                const prompt = `Based on the following message, suggest a short, conversational reply in 1-2 sentences: "${lastUserMessage}"`;
+                const suggestion = await generateTextFromGemini(prompt);
+                userInput.value = suggestion;
+                userInput.focus();
+            } catch (error) {
+                console.error("Error suggesting reply:", error);
+                appendMessage('bot', "Sorry, I couldn't suggest a reply right now.");
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        async function handleElaborate() {
+            if (!lastUserMessage) return;
+            hideGeminiFeatures();
+            showLoading(true);
+            try {
+                const prompt = `Provide a more detailed sentiment analysis for the following text. Identify the primary emotion and any underlying tones in a short paragraph. Text: "${lastUserMessage}"`;
+                const elaboration = await generateTextFromGemini(prompt);
+                appendMessage('bot', elaboration);
+            } catch (error) {
+                console.error("Error elaborating on sentiment:", error);
+                appendMessage('bot', "Sorry, I couldn't elaborate on the sentiment.");
+            } finally {
+                showLoading(false);
+                 geminiFeatures.classList.remove('hidden');
+            }
+        }
+
+        async function handleRephrase(event) {
+            const tone = event.target.dataset.tone;
+            if (!lastUserMessage || !tone) return;
+            
+            hideRephraseOptions();
+            showLoading(true);
+            try {
+                const prompt = `Rephrase the following message in a more ${tone} tone. Return only the rephrased text. Message: "${lastUserMessage}"`;
+                const rephrasedText = await generateTextFromGemini(prompt);
+                userInput.value = rephrasedText;
+                userInput.focus();
+            } catch (error) {
+                console.error("Error rephrasing message:", error);
+                appendMessage('bot', "Sorry, I couldn't rephrase that for you.");
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        async function handleSummarizeChat() {
+            if (conversationHistory.length === 0) return;
+            hideGeminiFeatures();
+            showLoading(true);
+            try {
+                const chatLog = conversationHistory.map(m => `${m.sender === 'user' ? 'User' : 'Bot'}: ${m.message}`).join('\n');
+                const prompt = `Briefly summarize the key points of the following conversation in a short paragraph:\n\n${chatLog}`;
+                const summary = await generateTextFromGemini(prompt);
+                appendMessage('bot', `Here's a summary of our chat:\n${summary}`);
+            } catch (error) {
+                console.error("Error summarizing chat:", error);
+                appendMessage('bot', "Sorry, I couldn't create a summary right now.");
+            } finally {
+                showLoading(false);
+                geminiFeatures.classList.remove('hidden');
+            }
+        }
+
+
+        // --- UI Updates ---
+        function appendMessage(sender, message) {
+            conversationHistory.push({ sender, message });
+            const messageWrapper = document.createElement('div');
+            
+            if (sender === 'user') {
+                messageWrapper.className = 'flex items-start justify-end gap-3 mb-6';
+                messageWrapper.innerHTML = `
+                    <div class="bg-blue-600 text-white p-3 rounded-lg max-w-xs">
+                        <p class="text-sm">${message}</p>
+                    </div>
+                    <div class="bg-gray-300 text-black p-2 rounded-full text-lg">
+                        👤
+                    </div>
+                `;
+            } else {
+                messageWrapper.className = 'flex items-start gap-3 mb-6';
+                messageWrapper.innerHTML = `
+                    <div class="bg-blue-500 text-white p-2 rounded-full text-lg">
+                        🤖
+                    </div>
+                    <div class="bg-gray-200 p-3 rounded-lg max-w-xs">
+                        <p class="text-sm text-gray-800" style="white-space: pre-wrap;">${message}</p>
+                    </div>
+                `;
+            }
+            chatArea.appendChild(messageWrapper);
+            chatArea.scrollTop = chatArea.scrollHeight; 
+        }
+
+        function showLoading(isLoading) {
+            loadingIndicator.style.display = isLoading ? 'block' : 'none';
+             if(isLoading) chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+
+        // --- Gemini API Calls with Exponential Backoff ---
+        async function apiCallWithRetries(prompt, retries = 3, delay = 1000) {
+             let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+            const payload = { contents: chatHistory };
+            const apiKey = "AIzaSyBcSm6kYnJIFtU5K7TWVLDXwoQbacC28zY"; // API key is handled by the environment
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`API request failed with status ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    
+                    if (result.candidates && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts.length > 0) {
+                        return result.candidates[0].content.parts[0].text;
+                    } else {
+                         throw new Error("Invalid response structure from API");
+                    }
+
+                } catch (error) {
+                    console.error(`Attempt ${i + 1} failed. Retrying in ${delay}ms...`, error);
+                    if (i === retries - 1) throw error;
+                    await new Promise(res => setTimeout(res, delay));
+                    delay *= 2;
+                }
+            }
+        }
+
+        async function getSentiment(text) {
+            const prompt = `Analyze the sentiment of the following text and return ONLY a JSON object with a single key "sentiment" and one of the following values: "positive", "negative", "neutral", or "mixed". Text: "${text}"`;
+            const responseText = await apiCallWithRetries(prompt);
+            const jsonString = responseText.match(/\{.*\}/s)[0];
+            const parsedJson = JSON.parse(jsonString);
+            return parsedJson.sentiment;
+        }
+
+        async function generateTextFromGemini(prompt) {
+             const responseText = await apiCallWithRetries(prompt);
+             return responseText.trim();
+        }
+
+    </script>
+</body>
+</html>
