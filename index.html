@@ -13,14 +13,31 @@
         .gemini-btn {
             background: linear-gradient(45deg, #4f46e5, #818cf8);
         }
+        #mic-btn.listening svg {
+            color: #ef4444; /* Red-500 */
+        }
+        #tts-btn.active svg {
+            color: #22c55e; /* Green-500 */
+        }
+         #tts-btn.loading svg {
+            animation: pulse 1.5s infinite;
+        }
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center h-screen">
-    <div class="w-full max-w-md mx-auto bg-white rounded-2xl shadow-xl flex flex-col h-[90vh]">
+    <div class="w-full max-w-md mx-auto bg-white rounded-none sm:rounded-2xl shadow-xl flex flex-col h-screen sm:h-[90vh] sm:max-h-[800px]">
         <!-- Header -->
-        <div class="p-4 border-b border-gray-200 bg-blue-600 rounded-t-2xl">
-            <h1 class="text-xl font-bold text-white text-center">Swastick's Sentimental Analyzer</h1>
-            <p class="text-sm text-blue-100 text-center">Enter a message to see its sentiment</p>
+        <div class="p-4 border-b border-gray-200 bg-blue-600 rounded-t-none sm:rounded-t-2xl flex justify-between items-center">
+            <div class="w-8"></div> <!-- Spacer -->
+            <div class="text-center">
+                <h1 class="text-xl font-bold text-white">Swastick's Sentimental Analyzer</h1>
+                <p class="text-sm text-blue-100">Enter a message to see its sentiment</p>
+            </div>
+            <button id="tts-btn" class="p-2 rounded-full text-white hover:bg-blue-700 focus:outline-none transition">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                </svg>
+            </button>
         </div>
 
         <!-- Chat Area -->
@@ -58,6 +75,7 @@
                 <button id="suggest-reply-btn" class="gemini-btn text-xs text-white px-3 py-1.5 rounded-full hover:opacity-90 transition transform hover:scale-105">✨ Suggest Reply</button>
                 <button id="elaborate-btn" class="gemini-btn text-xs text-white px-3 py-1.5 rounded-full hover:opacity-90 transition transform hover:scale-105">✨ Elaborate</button>
                 <button id="rephrase-btn" class="gemini-btn text-xs text-white px-3 py-1.5 rounded-full hover:opacity-90 transition transform hover:scale-105">✨ Rephrase</button>
+                <button id="correct-text-btn" class="gemini-btn text-xs text-white px-3 py-1.5 rounded-full hover:opacity-90 transition transform hover:scale-105">✨ Correct Text</button>
                 <button id="summarize-btn" class="gemini-btn text-xs text-white px-3 py-1.5 rounded-full hover:opacity-90 transition transform hover:scale-105 hidden">✨ Summarize Chat</button>
             </div>
         </div>
@@ -75,9 +93,14 @@
 
 
         <!-- Input Area -->
-        <div class="p-4 border-t border-gray-200 bg-white rounded-b-2xl">
+        <div class="p-4 border-t border-gray-200 bg-white rounded-b-none sm:rounded-b-2xl">
             <div class="flex items-center space-x-3">
-                <input type="text" id="user-input" placeholder="Type your message..." class="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 transition">
+                <input type="text" id="user-input" placeholder="Type or say something..." class="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 transition">
+                <button id="mic-btn" class="p-2 rounded-full text-gray-500 hover:bg-gray-100 hover:text-blue-600 focus:outline-none transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                </button>
                 <button id="send-btn" class="bg-blue-600 text-white px-5 py-2 rounded-full hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-300 ease-in-out transform hover:scale-105">
                     Send
                 </button>
@@ -90,254 +113,265 @@
         const chatArea = document.getElementById('chat-area');
         const userInput = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
+        const micBtn = document.getElementById('mic-btn');
+        const ttsBtn = document.getElementById('tts-btn');
         const loadingIndicator = document.getElementById('loading-indicator');
         const geminiFeatures = document.getElementById('gemini-features');
         const suggestReplyBtn = document.getElementById('suggest-reply-btn');
         const elaborateBtn = document.getElementById('elaborate-btn');
         const rephraseBtn = document.getElementById('rephrase-btn');
+        const correctTextBtn = document.getElementById('correct-text-btn');
         const summarizeBtn = document.getElementById('summarize-btn');
         const geminiRephraseOptions = document.getElementById('gemini-rephrase-options');
         const cancelRephraseBtn = document.getElementById('cancel-rephrase-btn');
 
         let lastUserMessage = '';
+        let lastMessageLang = 'English';
         let conversationHistory = [];
+        let recognition;
+        let isRecognizing = false;
+        let isTtsEnabled = false;
+
+        // --- Speech Recognition Setup ---
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.lang = 'en-US';
+            recognition.interimResults = false;
+
+            recognition.onstart = () => { isRecognizing = true; micBtn.classList.add('listening'); };
+            recognition.onend = () => { isRecognizing = false; micBtn.classList.remove('listening'); };
+            recognition.onresult = (event) => { userInput.value = event.results[0][0].transcript; };
+            recognition.onerror = (event) => {
+                isRecognizing = false;
+                console.error("Speech recognition error:", event.error);
+                micBtn.classList.remove('listening');
+                if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                    appendMessage('bot', "🎤 Microphone access was denied. Please allow microphone access in your browser settings to use the voice feature.");
+                } else if (event.error === 'no-speech') {
+                    appendMessage('bot', "🎤 I didn't hear anything. Please try again.");
+                } else if (event.error === 'network') {
+                    appendMessage('bot', "🎤 Voice recognition requires an internet connection. Please check your network and try again.");
+                } else {
+                    appendMessage('bot', "🎤 An error occurred with voice recognition. Please try again.");
+                }
+            };
+        } else {
+            console.log("Speech Recognition not supported.");
+            micBtn.style.display = 'none';
+        }
 
         // --- Event Listeners ---
         sendBtn.addEventListener('click', handleSendMessage);
-        userInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') handleSendMessage();
+        userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSendMessage(); });
+        micBtn.addEventListener('click', () => {
+            if (isRecognizing) { recognition.stop(); return; }
+            if (recognition) {
+                try {
+                    recognition.lang = lastMessageLang === 'Hinglish' ? 'hi-IN' : 'en-US';
+                    recognition.start();
+                } catch(e) { console.error("Could not start recognition:", e); appendMessage('bot', "Could not start voice recognition."); }
+            }
+        });
+        ttsBtn.addEventListener('click', () => {
+            isTtsEnabled = !isTtsEnabled;
+            ttsBtn.classList.toggle('active', isTtsEnabled);
         });
         userInput.addEventListener('input', hideGeminiFeatures);
         suggestReplyBtn.addEventListener('click', handleSuggestReply);
         elaborateBtn.addEventListener('click', handleElaborate);
         rephraseBtn.addEventListener('click', showRephraseOptions);
+        correctTextBtn.addEventListener('click', handleCorrectText);
         summarizeBtn.addEventListener('click', handleSummarizeChat);
         cancelRephraseBtn.addEventListener('click', hideRephraseOptions);
-        document.querySelectorAll('.rephrase-tone-btn').forEach(button => {
-            button.addEventListener('click', handleRephrase);
-        });
-
+        document.querySelectorAll('.rephrase-tone-btn').forEach(button => { button.addEventListener('click', handleRephrase); });
 
         // --- UI State Management ---
         function hideGeminiFeatures() {
             geminiFeatures.classList.add('hidden');
             geminiRephraseOptions.classList.add('hidden');
         }
-
         function showRephraseOptions() {
             geminiFeatures.classList.add('hidden');
             geminiRephraseOptions.classList.remove('hidden');
         }
-        
         function hideRephraseOptions() {
             geminiRephraseOptions.classList.add('hidden');
-            if (lastUserMessage) {
-                 geminiFeatures.classList.remove('hidden');
-            }
+            if (lastUserMessage) geminiFeatures.classList.remove('hidden');
         }
 
         // --- Message Handling ---
         async function handleSendMessage() {
             const message = userInput.value.trim();
             if (!message) return;
-            
             lastUserMessage = message;
             hideGeminiFeatures();
             appendMessage('user', message);
             userInput.value = '';
             showLoading(true);
-
             try {
+                lastMessageLang = await detectLanguage(message);
+                updateUIForLanguage(lastMessageLang);
                 const sentiment = await getSentiment(message);
-                const botResponse = handleBotResponse(sentiment);
+                const botResponse = handleBotResponse(sentiment, lastMessageLang);
                 appendMessage('bot', botResponse);
-                geminiFeatures.classList.remove('hidden'); 
-                
-                // Show summarize button after 2 user messages
-                const userMessages = conversationHistory.filter(m => m.sender === 'user').length;
-                if (userMessages >= 2) {
-                    summarizeBtn.classList.remove('hidden');
+                if (isTtsEnabled) {
+                    await speakText(botResponse);
                 }
-
+                geminiFeatures.classList.remove('hidden');
+                const userMessages = conversationHistory.filter(m => m.sender === 'user').length;
+                if (userMessages >= 2) summarizeBtn.classList.remove('hidden');
             } catch (error) {
-                console.error("Error getting sentiment:", error);
-                appendMessage('bot', "Sorry, I couldn't analyze the sentiment. Please try again.");
+                console.error("Error in message handling pipeline:", error);
+                const errorMessage = lastMessageLang === 'Hinglish' ? "Sorry, main sentiment analyze nahi kar paya." : "Sorry, I couldn't analyze the sentiment.";
+                appendMessage('bot', errorMessage);
             } finally {
                 showLoading(false);
             }
         }
 
-        function handleBotResponse(sentiment) {
+        function handleBotResponse(sentiment, lang) {
             let emoji = '😐';
-            let responseText = "I'd say the sentiment is neutral.";
-
-            switch (sentiment.toLowerCase()) {
-                case 'positive': emoji = '😊'; responseText = "That sounds positive!"; break;
-                case 'negative': emoji = '😠'; responseText = "That seems negative."; break;
-                case 'neutral': emoji = '😐'; responseText = "This seems to be neutral."; break;
-                case 'mixed': emoji = '🤔'; responseText = "This has mixed sentiments."; break;
+            let responseText;
+            if (lang === 'Hinglish') {
+                responseText = "Iska sentiment neutral lag raha hai.";
+                switch (sentiment.toLowerCase()) {
+                    case 'positive': emoji = '😊'; responseText = "Yeh toh positive lag raha hai!"; break;
+                    case 'negative': emoji = '😠'; responseText = "Yeh thoda negative lag raha hai."; break;
+                    case 'neutral': emoji = '😐'; responseText = "Yeh neutral sa hai."; break;
+                    case 'mixed': emoji = '🤔'; responseText = "Isme mixed feelings hain."; break;
+                }
+            } else {
+                responseText = "I'd say the sentiment is neutral.";
+                switch (sentiment.toLowerCase()) {
+                    case 'positive': emoji = '😊'; responseText = "That sounds positive!"; break;
+                    case 'negative': emoji = '😠'; responseText = "That seems negative."; break;
+                    case 'neutral': emoji = '😐'; responseText = "This seems to be neutral."; break;
+                    case 'mixed': emoji = '�'; responseText = "This has mixed sentiments."; break;
+                }
             }
             return `${emoji} ${responseText}`;
         }
 
         // --- Gemini Features ---
-        async function handleSuggestReply() {
+        async function handleCorrectText() {
             if (!lastUserMessage) return;
             hideGeminiFeatures();
             showLoading(true);
             try {
-                const prompt = `Based on the following message, suggest a short, conversational reply in 1-2 sentences: "${lastUserMessage}"`;
-                const suggestion = await generateTextFromGemini(prompt);
-                userInput.value = suggestion;
+                const prompt = `Correct any spelling or grammar mistakes in the following text, keeping the original language (${lastMessageLang}). Return only the corrected text. Text: "${lastUserMessage}"`;
+                const correctedText = await generateTextFromGemini(prompt);
+                userInput.value = correctedText;
                 userInput.focus();
             } catch (error) {
-                console.error("Error suggesting reply:", error);
-                appendMessage('bot', "Sorry, I couldn't suggest a reply right now.");
+                console.error("Error correcting text:", error);
+                appendMessage('bot', lastMessageLang === 'Hinglish' ? "Sorry, main text theek nahi kar paya." : "Sorry, I couldn't correct the text.");
             } finally {
                 showLoading(false);
             }
         }
         
-        async function handleElaborate() {
-            if (!lastUserMessage) return;
-            hideGeminiFeatures();
-            showLoading(true);
+        // --- (Rest of feature functions remain the same) ---
+
+        // --- Audio Handling ---
+        async function speakText(text) {
+            if (!text) return;
+            ttsBtn.classList.add('loading');
             try {
-                const prompt = `Provide a more detailed sentiment analysis for the following text. Identify the primary emotion and any underlying tones in a short paragraph. Text: "${lastUserMessage}"`;
-                const elaboration = await generateTextFromGemini(prompt);
-                appendMessage('bot', elaboration);
+                const audioData = await generateSpeechFromGemini(text);
+                const pcmData = base64ToArrayBuffer(audioData.audioData);
+                const pcm16 = new Int16Array(pcmData);
+                const wavBlob = pcmToWav(pcm16, audioData.sampleRate);
+                const audioUrl = URL.createObjectURL(wavBlob);
+                const audio = new Audio(audioUrl);
+                audio.play();
+                audio.onended = () => URL.revokeObjectURL(audioUrl);
             } catch (error) {
-                console.error("Error elaborating on sentiment:", error);
-                appendMessage('bot', "Sorry, I couldn't elaborate on the sentiment.");
+                console.error("Error speaking text:", error);
+                appendMessage('bot', "Sorry, I couldn't generate audio for that response.");
             } finally {
-                showLoading(false);
-                 geminiFeatures.classList.remove('hidden');
+                ttsBtn.classList.remove('loading');
             }
         }
 
-        async function handleRephrase(event) {
-            const tone = event.target.dataset.tone;
-            if (!lastUserMessage || !tone) return;
-            
-            hideRephraseOptions();
-            showLoading(true);
-            try {
-                const prompt = `Rephrase the following message in a more ${tone} tone. Return only the rephrased text. Message: "${lastUserMessage}"`;
-                const rephrasedText = await generateTextFromGemini(prompt);
-                userInput.value = rephrasedText;
-                userInput.focus();
-            } catch (error) {
-                console.error("Error rephrasing message:", error);
-                appendMessage('bot', "Sorry, I couldn't rephrase that for you.");
-            } finally {
-                showLoading(false);
+        function base64ToArrayBuffer(base64) {
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
             }
-        }
-        
-        async function handleSummarizeChat() {
-            if (conversationHistory.length === 0) return;
-            hideGeminiFeatures();
-            showLoading(true);
-            try {
-                const chatLog = conversationHistory.map(m => `${m.sender === 'user' ? 'User' : 'Bot'}: ${m.message}`).join('\n');
-                const prompt = `Briefly summarize the key points of the following conversation in a short paragraph:\n\n${chatLog}`;
-                const summary = await generateTextFromGemini(prompt);
-                appendMessage('bot', `Here's a summary of our chat:\n${summary}`);
-            } catch (error) {
-                console.error("Error summarizing chat:", error);
-                appendMessage('bot', "Sorry, I couldn't create a summary right now.");
-            } finally {
-                showLoading(false);
-                geminiFeatures.classList.remove('hidden');
-            }
+            return bytes.buffer;
         }
 
+        function pcmToWav(pcmData, sampleRate) {
+            const numChannels = 1;
+            const bitsPerSample = 16;
+            const blockAlign = (numChannels * bitsPerSample) / 8;
+            const byteRate = sampleRate * blockAlign;
+            const dataSize = pcmData.length * (bitsPerSample / 8);
+            const buffer = new ArrayBuffer(44 + dataSize);
+            const view = new DataView(buffer);
 
-        // --- UI Updates ---
-        function appendMessage(sender, message) {
-            conversationHistory.push({ sender, message });
-            const messageWrapper = document.createElement('div');
-            
-            if (sender === 'user') {
-                messageWrapper.className = 'flex items-start justify-end gap-3 mb-6';
-                messageWrapper.innerHTML = `
-                    <div class="bg-blue-600 text-white p-3 rounded-lg max-w-xs">
-                        <p class="text-sm">${message}</p>
-                    </div>
-                    <div class="bg-gray-300 text-black p-2 rounded-full text-lg">
-                        👤
-                    </div>
-                `;
+            function writeString(view, offset, string) { for (let i = 0; i < string.length; i++) { view.setUint8(offset + i, string.charCodeAt(i)); } }
+
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + dataSize, true);
+            writeString(view, 8, 'WAVE');
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, numChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, byteRate, true);
+            view.setUint16(32, blockAlign, true);
+            view.setUint16(34, bitsPerSample, true);
+            writeString(view, 36, 'data');
+            view.setUint32(40, dataSize, true);
+
+            for (let i = 0; i < pcmData.length; i++) { view.setInt16(44 + i * 2, pcmData[i], true); }
+
+            return new Blob([view], { type: 'audio/wav' });
+        }
+
+        // --- Gemini API Calls ---
+        async function generateSpeechFromGemini(textToSpeak) {
+            const payload = { contents: [{ parts: [{ text: textToSpeak }] }], generationConfig: { responseModalities: ["AUDIO"], }, model: "gemini-2.5-flash-preview-tts" };
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+            const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (!response.ok) throw new Error(`TTS API request failed with status ${response.status}`);
+            const result = await response.json();
+            const part = result?.candidates?.[0]?.content?.parts?.[0];
+            const audioData = part?.inlineData?.data;
+            const mimeType = part?.inlineData?.mimeType;
+
+            if (audioData && mimeType && mimeType.startsWith("audio/")) {
+                const sampleRateMatch = mimeType.match(/rate=(\d+)/);
+                const sampleRate = sampleRateMatch ? parseInt(sampleRateMatch[1], 10) : 24000;
+                return { audioData, sampleRate };
             } else {
-                messageWrapper.className = 'flex items-start gap-3 mb-6';
-                messageWrapper.innerHTML = `
-                    <div class="bg-blue-500 text-white p-2 rounded-full text-lg">
-                        🤖
-                    </div>
-                    <div class="bg-gray-200 p-3 rounded-lg max-w-xs">
-                        <p class="text-sm text-gray-800" style="white-space: pre-wrap;">${message}</p>
-                    </div>
-                `;
-            }
-            chatArea.appendChild(messageWrapper);
-            chatArea.scrollTop = chatArea.scrollHeight; 
-        }
-
-        function showLoading(isLoading) {
-            loadingIndicator.style.display = isLoading ? 'block' : 'none';
-             if(isLoading) chatArea.scrollTop = chatArea.scrollHeight;
-        }
-
-
-        // --- Gemini API Calls with Exponential Backoff ---
-        async function apiCallWithRetries(prompt, retries = 3, delay = 1000) {
-             let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
-            const payload = { contents: chatHistory };
-            const apiKey = "AIzaSyBcSm6kYnJIFtU5K7TWVLDXwoQbacC28zY"; // API key is handled by the environment
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-
-            for (let i = 0; i < retries; i++) {
-                try {
-                    const response = await fetch(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`API request failed with status ${response.status}`);
-                    }
-
-                    const result = await response.json();
-                    
-                    if (result.candidates && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts.length > 0) {
-                        return result.candidates[0].content.parts[0].text;
-                    } else {
-                         throw new Error("Invalid response structure from API");
-                    }
-
-                } catch (error) {
-                    console.error(`Attempt ${i + 1} failed. Retrying in ${delay}ms...`, error);
-                    if (i === retries - 1) throw error;
-                    await new Promise(res => setTimeout(res, delay));
-                    delay *= 2;
-                }
+                throw new Error("Invalid TTS response from API");
             }
         }
+        
+        // --- (Rest of API call functions remain the same) ---
 
-        async function getSentiment(text) {
-            const prompt = `Analyze the sentiment of the following text and return ONLY a JSON object with a single key "sentiment" and one of the following values: "positive", "negative", "neutral", or "mixed". Text: "${text}"`;
-            const responseText = await apiCallWithRetries(prompt);
-            const jsonString = responseText.match(/\{.*\}/s)[0];
-            const parsedJson = JSON.parse(jsonString);
-            return parsedJson.sentiment;
-        }
-
-        async function generateTextFromGemini(prompt) {
-             const responseText = await apiCallWithRetries(prompt);
-             return responseText.trim();
-        }
+        // --- Helper functions to keep code clean ---
+        async function handleSuggestReply() { if (!lastUserMessage) return; hideGeminiFeatures(); showLoading(true); try { const prompt = `Based on the following message, suggest a short, conversational reply in ${lastMessageLang}: "${lastUserMessage}"`; const suggestion = await generateTextFromGemini(prompt); userInput.value = suggestion; userInput.focus(); } catch (error) { console.error("Error suggesting reply:", error); appendMessage('bot', lastMessageLang === 'Hinglish' ? "Sorry, abhi reply suggest nahi kar sakta." : "Sorry, I couldn't suggest a reply right now."); } finally { showLoading(false); } }
+        async function handleElaborate() { if (!lastUserMessage) return; hideGeminiFeatures(); showLoading(true); try { const prompt = `Provide a more detailed sentiment analysis for the following text. Identify the primary emotion and any underlying tones in a short paragraph, written in ${lastMessageLang}. Text: "${lastUserMessage}"`; const elaboration = await generateTextFromGemini(prompt); appendMessage('bot', elaboration); if (isTtsEnabled) await speakText(elaboration); } catch (error) { console.error("Error elaborating:", error); appendMessage('bot', lastMessageLang === 'Hinglish' ? "Sorry, iske baare mein aur nahi bata sakta." : "Sorry, I couldn't elaborate on that."); } finally { showLoading(false); geminiFeatures.classList.remove('hidden'); } }
+        async function handleRephrase(event) { const tone = event.target.dataset.tone; if (!lastUserMessage || !tone) return; hideRephraseOptions(); showLoading(true); try { const prompt = `Rephrase the following message in a more ${tone} tone, using ${lastMessageLang}. Return only the rephrased text. Message: "${lastUserMessage}"`; const rephrasedText = await generateTextFromGemini(prompt); userInput.value = rephrasedText; userInput.focus(); } catch (error) { console.error("Error rephrasing message:", error); appendMessage('bot', lastMessageLang === 'Hinglish' ? "Sorry, isse alag tarah se nahi likh sakta." : "Sorry, I couldn't rephrase that for you."); } finally { showLoading(false); } }
+        async function handleSummarizeChat() { if (conversationHistory.length === 0) return; hideGeminiFeatures(); showLoading(true); try { const chatLog = conversationHistory.map(m => `${m.sender === 'user' ? 'User' : 'Bot'}: ${m.message}`).join('\n'); const prompt = `Briefly summarize the key points of the following conversation in a short paragraph, written in ${lastMessageLang}:\n\n${chatLog}`; const summary = await generateTextFromGemini(prompt); const prefix = lastMessageLang === 'Hinglish' ? "Apni baat-cheet ka saar yeh hai:\n" : "Here's a summary of our chat:\n"; const fullSummary = prefix + summary; appendMessage('bot', fullSummary); if (isTtsEnabled) await speakText(fullSummary); } catch (error) { console.error("Error summarizing chat:", error); appendMessage('bot', lastMessageLang === 'Hinglish' ? "Sorry, abhi summary nahi bana sakta." : "Sorry, I couldn't create a summary right now."); } finally { showLoading(false); geminiFeatures.classList.remove('hidden'); } }
+        function updateUIForLanguage(lang) { if (lang === 'Hinglish') { suggestReplyBtn.textContent = '✨ Reply Sujhao'; elaborateBtn.textContent = '✨ Aur Batao'; rephraseBtn.textContent = '✨ Alag Tarah se Likho'; correctTextBtn.textContent = '✨ Text Sahi Karo'; summarizeBtn.textContent = '✨ Chat ka Saar'; geminiRephraseOptions.querySelector('span').textContent = 'Kaise likhna hai:'; } else { suggestReplyBtn.textContent = '✨ Suggest Reply'; elaborateBtn.textContent = '✨ Elaborate'; rephraseBtn.textContent = '✨ Rephrase'; correctTextBtn.textContent = '✨ Correct Text'; summarizeBtn.textContent = '✨ Summarize Chat'; geminiRephraseOptions.querySelector('span').textContent = 'Rephrase as:'; } }
+        function appendMessage(sender, message) { if (sender !== 'user') conversationHistory.push({ sender, message }); else conversationHistory.push({ sender, message: lastUserMessage }); const messageWrapper = document.createElement('div'); if (sender === 'user') { messageWrapper.className = 'flex items-start justify-end gap-3 mb-6'; messageWrapper.innerHTML = `<div class="bg-blue-600 text-white p-3 rounded-lg max-w-xs"><p class="text-sm">${message}</p></div><div class="bg-gray-300 text-black p-2 rounded-full text-lg">👤</div>`; } else { messageWrapper.className = 'flex items-start gap-3 mb-6'; messageWrapper.innerHTML = `<div class="bg-blue-500 text-white p-2 rounded-full text-lg">🤖</div><div class="bg-gray-200 p-3 rounded-lg max-w-xs"><p class="text-sm text-gray-800" style="white-space: pre-wrap;">${message}</p></div>`; } chatArea.appendChild(messageWrapper); chatArea.scrollTop = chatArea.scrollHeight; }
+        function showLoading(isLoading) { loadingIndicator.style.display = isLoading ? 'block' : 'none'; if(isLoading) chatArea.scrollTop = chatArea.scrollHeight; }
+        async function apiCallWithRetries(prompt, retries = 3, delay = 1000) { let chatHistory = [{ role: "user", parts: [{ text: prompt }] }]; const payload = { contents: chatHistory }; const apiKey = ""; const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`; for (let i = 0; i < retries; i++) { try { const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); if (!response.ok) throw new Error(`API request failed with status ${response.status}`); const result = await response.json(); if (result.candidates?.[0]?.content?.parts?.[0]?.text) { return result.candidates[0].content.parts[0].text; } else { throw new Error("Invalid response structure from API"); } } catch (error) { console.error(`Attempt ${i + 1} failed. Retrying in ${delay}ms...`, error); if (i === retries - 1) throw error; await new Promise(res => setTimeout(res, delay)); delay *= 2; } } }
+        async function detectLanguage(text) { const prompt = `Is the following text primarily in English or Hinglish? Respond with only the word "English" or "Hinglish". Text: "${text}"`; const lang = await apiCallWithRetries(prompt); return lang.toLowerCase().includes('hinglish') ? 'Hinglish' : 'English'; }
+        async function getSentiment(text) { const prompt = `Analyze the sentiment of the following text (which could be English or Hinglish) and return ONLY a JSON object with a single key "sentiment" and one value: "positive", "negative", "neutral", or "mixed". Text: "${text}"`; let responseText = await apiCallWithRetries(prompt); const jsonMatch = responseText.match(/\{.*\}/s); if (jsonMatch && jsonMatch[0]) { try { return JSON.parse(jsonMatch[0]).sentiment; } catch (e) { console.error("Failed to parse JSON from sentiment response:", e); throw new Error("Invalid JSON in sentiment response"); } } throw new Error("Could not find JSON in sentiment response"); }
+        async function generateTextFromGemini(prompt) { const responseText = await apiCallWithRetries(prompt); return responseText.trim(); }
 
     </script>
 </body>
 </html>
+�
