@@ -338,7 +338,7 @@
         // --- Gemini API Calls ---
         async function generateSpeechFromGemini(textToSpeak) {
             const payload = { contents: [{ parts: [{ text: textToSpeak }] }], generationConfig: { responseModalities: ["AUDIO"], }, model: "gemini-2.5-flash-preview-tts" };
-            const apiKey = "";
+            const apiKey = "AIzaSyBcSm6kYnJIFtU5K7TWVLDXwoQbacC28zY";
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
             const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             if (!response.ok) throw new Error(`TTS API request failed with status ${response.status}`);
