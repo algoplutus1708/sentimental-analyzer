@@ -248,7 +248,7 @@
                     case 'positive': emoji = '😊'; responseText = "That sounds positive!"; break;
                     case 'negative': emoji = '😠'; responseText = "That seems negative."; break;
                     case 'neutral': emoji = '😐'; responseText = "This seems to be neutral."; break;
-                    case 'mixed': emoji = '�'; responseText = "This has mixed sentiments."; break;
+                    case 'mixed': emoji = '🤔'; responseText = "This has mixed sentiments."; break;
                 }
             }
             return `${emoji} ${responseText}`;
@@ -338,7 +338,7 @@
         // --- Gemini API Calls ---
         async function generateSpeechFromGemini(textToSpeak) {
             const payload = { contents: [{ parts: [{ text: textToSpeak }] }], generationConfig: { responseModalities: ["AUDIO"], }, model: "gemini-2.5-flash-preview-tts" };
-            const apiKey = "AIzaSyBcSm6kYnJIFtU5K7TWVLDXwoQbacC28zY";
+            const apiKey = "";
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
             const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             if (!response.ok) throw new Error(`TTS API request failed with status ${response.status}`);
@@ -374,4 +374,3 @@
     </script>
 </body>
 </html>
-�
